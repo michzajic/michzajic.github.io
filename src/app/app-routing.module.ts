@@ -10,7 +10,7 @@ import { ContactFormComponent } from './base/contact/contact-form.component';
 const routes: Routes = [
   { path: 'brunch', component: BrunchComponent },
   { path: 'obed', component: LunchComponent },
-  { path: 'vecera', component: DinnerComponent },
+  // { path: 'vecera', component: DinnerComponent },
   { path: 'drinky', component: DrinksComponent },
   { path: 'kontakt', component: ContactFormComponent },
   { path: '', component: HomeComponent }

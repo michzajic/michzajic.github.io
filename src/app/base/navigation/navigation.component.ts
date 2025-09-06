@@ -31,9 +31,9 @@ export class NavigationComponent {
             this.color = "#000000";
             break;
           case '/obed':
-          case '/vecera':
-            this.textColor = "#000000";
-            this.color = "#ffffff"; break;
+          // case '/vecera':
+          //   this.textColor = "#000000";
+          //   this.color = "#ffffff"; break;
           case '/drinky':
             this.textColor = "#ffffff";
             this.color = "#e12d59";
