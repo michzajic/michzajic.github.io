@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Slepá mapa Ázie – tlačová verzia</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    @import url('https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Satoshi', sans-serif;
+      background: #fff;
+      color: #1a1614;
+    }
+
+    /* ── Screen layout ── */
+    .page {
+      width: 210mm;
+      min-height: 297mm;
+      margin: 0 auto;
+      padding: 10mm;
+      background: #fff;
+    }
+
+    .page-title {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+      margin-bottom: 4px;
+    }
+
+    .page-subtitle {
+      font-size: 11px;
+      color: #777;
+      margin-bottom: 8px;
+    }
+
+    /* ── Map ── */
+    #map {
+      width: 100%;
+      height: 148mm;
+      border: 1px solid #e0d9ce;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    /* ── Type legend bar ── */
+    .type-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 12px;
+      margin-top: 6px;
+      margin-bottom: 10px;
+    }
+
+    .type-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 9px;
+      font-weight: 500;
+      color: #444;
+    }
+
+    .type-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* ── Location list ── */
+    .list-title {
+      font-size: 13px;
+      font-weight: 700;
+      margin-bottom: 6px;
+      border-bottom: 1.5px solid #e0d9ce;
+      padding-bottom: 4px;
+    }
+
+    .location-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 3px 10px;
+    }
+
+    .location-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 9.5px;
+      line-height: 1.4;
+      padding: 1.5px 0;
+    }
+
+    .loc-badge {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-weight: 700;
+      font-size: 7.5px;
+      flex-shrink: 0;
+      border: 1px solid rgba(0,0,0,0.15);
+    }
+
+    .loc-name { flex: 1; min-width: 0; }
+    .loc-type { font-size: 8px; color: #888; }
+
+    /* ── Print button ── */
+    .print-btn {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      padding: 10px 20px;
+      background: #0d9488;
+      color: #fff;
+      font-family: 'Satoshi', sans-serif;
+      font-weight: 700;
+      font-size: 14px;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+      z-index: 9999;
+      transition: background 0.2s;
+    }
+    .print-btn:hover { background: #0f766e; }
+
+    /* ── Print styles ── */
+    @page {
+      size: A4 portrait;
+      margin: 10mm;
+    }
+
+    @media print {
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+      .print-btn { display: none; }
+
+      .page {
+        width: 100%;
+        padding: 0;
+        margin: 0;
+      }
+
+      #map {
+        height: 145mm;
+        border-radius: 4px;
+      }
+
+      .leaflet-control-container { display: none !important; }
+      .leaflet-attribution-flag { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+
+<button class="print-btn" onclick="printMap()">🖨 Tlačiť / Uložiť PDF</button>
+
+<div class="page">
+  <div class="page-title">Slepá mapa Ázie</div>
+  <div class="page-subtitle">71 lokalít · farebne rozlíšené podľa typu</div>
+
+  <div id="map"></div>
+
+  <!-- Type colour legend -->
+  <div class="type-legend" id="type-legend"></div>
+
+  <!-- Location list -->
+  <div class="list-title">Zoznam lokalít</div>
+  <div class="location-grid" id="location-grid"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const TYPE_LABELS = {
+  sea: 'More', gulf: 'Záliv', strait: 'Prieliv', canal: 'Prieplav',
+  river: 'Rieka', lake: 'Jazero', mountain: 'Pohorie', plain: 'Nížina',
+  plateau: 'Plošina', desert: 'Púšť', peninsula: 'Polostrov', island: 'Ostrov',
+}
+
+const TYPE_COLORS = {
+  sea: '#3b82f6', gulf: '#3b82f6', river: '#b45309', lake: '#0ea5e9',
+  mountain: '#16a34a', plateau: '#16a34a', plain: '#ca8a04', desert: '#ef4444',
+  peninsula: '#a855f7', island: '#a855f7', canal: '#9ca3af', strait: '#9ca3af',
+}
+
+const locations = [
+  { id:1,  name:'Suezský prieplav',       type:'canal',     lat:30.5,  lng:32.3  },
+  { id:2,  name:'Baringov prieliv',        type:'strait',    lat:65.7,  lng:191.1 },
+  { id:3,  name:'Azovské more',            type:'sea',       lat:46.0,  lng:37.0  },
+  { id:4,  name:'Čierne more',             type:'sea',       lat:43.0,  lng:33.0  },
+  { id:5,  name:'Egejské more',            type:'sea',       lat:39.0,  lng:25.0  },
+  { id:6,  name:'Východosibírske more',    type:'sea',       lat:73.0,  lng:163.0 },
+  { id:7,  name:'Beringovo more',          type:'sea',       lat:58.0,  lng:186.0 },
+  { id:8,  name:'Ochotské more',           type:'sea',       lat:55.0,  lng:150.0 },
+  { id:9,  name:'Japonské more',           type:'sea',       lat:40.0,  lng:135.0 },
+  { id:10, name:'Východočínske more',      type:'sea',       lat:30.0,  lng:125.0 },
+  { id:11, name:'Juhočínske more',         type:'sea',       lat:12.0,  lng:114.0 },
+  { id:12, name:'Arabské more',            type:'sea',       lat:16.0,  lng:65.0  },
+  { id:13, name:'Perzský záliv',           type:'gulf',      lat:26.0,  lng:52.0  },
+  { id:14, name:'Bengálsky záliv',         type:'gulf',      lat:13.0,  lng:88.0  },
+  { id:15, name:'Arabský polostrov',       type:'peninsula', lat:23.0,  lng:45.0  },
+  { id:16, name:'Predná India',            type:'peninsula', lat:22.0,  lng:78.0  },
+  { id:17, name:'Zadná India',             type:'peninsula', lat:16.0,  lng:103.0 },
+  { id:18, name:'Malajský polostrov',      type:'peninsula', lat:5.0,   lng:103.0 },
+  { id:19, name:'Kórejský polostrov',      type:'peninsula', lat:36.5,  lng:127.5 },
+  { id:20, name:'Polostrov Kamčatka',      type:'peninsula', lat:54.0,  lng:159.0 },
+  { id:21, name:'Polostrov Tajmyr',        type:'peninsula', lat:75.0,  lng:104.0 },
+  { id:22, name:'Polostrov Malá Ázia',     type:'peninsula', lat:39.0,  lng:33.0  },
+  { id:23, name:'Cyprus',                  type:'island',    lat:35.1,  lng:33.4  },
+  { id:24, name:'Cejlón',                  type:'island',    lat:8.0,   lng:81.0  },
+  { id:25, name:'Sumatra',                 type:'island',    lat:0.0,   lng:102.0 },
+  { id:26, name:'Java',                    type:'island',    lat:-7.5,  lng:110.0 },
+  { id:27, name:'Borneo',                  type:'island',    lat:0.5,   lng:114.0 },
+  { id:28, name:'Sulawesi',                type:'island',    lat:-2.0,  lng:121.0 },
+  { id:29, name:'Malé Sundy',              type:'island',    lat:-9.0,  lng:120.0 },
+  { id:30, name:'Filipíny',               type:'island',    lat:13.0,  lng:122.0 },
+  { id:31, name:'Taiwan',                  type:'island',    lat:23.5,  lng:121.0 },
+  { id:32, name:'Japonské ostrovy',        type:'island',    lat:36.0,  lng:138.0 },
+  { id:33, name:'Ob',                      type:'river',     lat:60.0,  lng:72.0  },
+  { id:34, name:'Jenisej',                 type:'river',     lat:63.0,  lng:87.0  },
+  { id:35, name:'Lena',                    type:'river',     lat:65.0,  lng:127.0 },
+  { id:36, name:'Amur',                    type:'river',     lat:52.0,  lng:131.0 },
+  { id:37, name:'Huang He',               type:'river',     lat:37.0,  lng:108.0 },
+  { id:38, name:'Jang-c Tiang',           type:'river',     lat:31.0,  lng:110.0 },
+  { id:39, name:'Mekong',                  type:'river',     lat:18.0,  lng:101.0 },
+  { id:40, name:'Ganga',                   type:'river',     lat:26.0,  lng:83.0  },
+  { id:41, name:'Indus',                   type:'river',     lat:28.0,  lng:70.0  },
+  { id:42, name:'Brahmaputra',             type:'river',     lat:27.0,  lng:90.0  },
+  { id:43, name:'Tigris',                  type:'river',     lat:34.0,  lng:44.0  },
+  { id:44, name:'Eufrat',                  type:'river',     lat:35.5,  lng:40.0  },
+  { id:45, name:'Kaspické more',           type:'sea',       lat:42.0,  lng:51.0  },
+  { id:46, name:'Mŕtve more',             type:'lake',      lat:31.5,  lng:35.5  },
+  { id:47, name:'Bajkalské jazero',        type:'lake',      lat:53.0,  lng:107.5 },
+  { id:48, name:'Balchašské jazero',       type:'lake',      lat:46.5,  lng:74.5  },
+  { id:49, name:'Aralské jazero',          type:'lake',      lat:44.0,  lng:60.0  },
+  { id:50, name:'Ural',                    type:'mountain',  lat:57.0,  lng:59.0  },
+  { id:51, name:'Kaukaz',                  type:'mountain',  lat:43.0,  lng:43.5  },
+  { id:52, name:'Mt. Everest',             type:'mountain',  lat:27.99, lng:86.93 },
+  { id:53, name:'Pamír',                  type:'mountain',  lat:38.5,  lng:73.5  },
+  { id:54, name:'Himaláje',              type:'mountain',  lat:28.0,  lng:84.0  },
+  { id:55, name:'Kunlún',               type:'mountain',  lat:36.0,  lng:87.0  },
+  { id:56, name:'Ťanšan',              type:'mountain',  lat:42.0,  lng:80.0  },
+  { id:57, name:'Altaj',                   type:'mountain',  lat:50.0,  lng:88.0  },
+  { id:58, name:'Hindukúš',             type:'mountain',  lat:35.0,  lng:70.0  },
+  { id:59, name:'Karakóram',            type:'mountain',  lat:36.0,  lng:76.0  },
+  { id:60, name:'Západosibírska nížina',   type:'plain',     lat:60.0,  lng:70.0  },
+  { id:61, name:'Mezopotámska nížina',     type:'plain',     lat:33.0,  lng:44.0  },
+  { id:62, name:'Indogangská nížina',      type:'plain',     lat:27.0,  lng:79.0  },
+  { id:63, name:'Veľká čínska nížina',    type:'plain',     lat:35.0,  lng:116.0 },
+  { id:64, name:'Turánska nížina',         type:'plain',     lat:41.0,  lng:59.0  },
+  { id:65, name:'Tibetská náhorná plošina',type:'plateau',   lat:32.0,  lng:88.0  },
+  { id:66, name:'Dekánska plošina',        type:'plateau',   lat:18.0,  lng:77.0  },
+  { id:67, name:'Púšť Gobi',              type:'desert',    lat:42.0,  lng:105.0 },
+  { id:68, name:'Púšť Nafúd',            type:'desert',    lat:28.0,  lng:41.0  },
+  { id:69, name:'Púšť Rub-al-Khali',      type:'desert',    lat:21.0,  lng:51.0  },
+  { id:70, name:'Púšť Karakum',           type:'desert',    lat:39.0,  lng:59.0  },
+  { id:71, name:'Púšť Kyzylkum',          type:'desert',    lat:42.0,  lng:63.0  },
+]
+
+const riverPaths = [
+  { id:33, coords:[[52,84.5],[54,82],[56,76],[58.5,71],[60.5,68.5],[62.5,66.5],[64.5,65.5],[66.5,68.5],[66.8,73.5]] },
+  { id:34, coords:[[52,94],[54,92],[57,91],[59.5,89.5],[62,88],[65,86.5],[67.5,85.5],[70,83.5],[71.5,82.5]] },
+  { id:35, coords:[[53.5,107.5],[56,110],[59,114.5],[61.5,120.5],[63.5,126.5],[65,127],[67,124.5],[69.5,124],[72.5,126.5]] },
+  { id:36, coords:[[49.5,119],[49.5,121.5],[49,124],[49.5,127],[50.5,130.5],[51.5,134],[52.5,137.5],[53.2,140.7]] },
+  { id:37, coords:[[34.5,96.5],[35.5,100],[36.5,103.5],[38.5,107],[40.5,110.5],[40,112],[37.5,114],[35.5,115.5],[36,117.5],[37.5,118.5],[38,119.5]] },
+  { id:38, coords:[[32.5,91.5],[29.5,96],[27,99],[26.5,101.5],[28,104.5],[29,107],[30,110.5],[30.5,113.5],[30.5,117],[31,120.5],[31.5,121.8]] },
+  { id:39, coords:[[32.5,94],[29.5,97],[25.5,99.5],[22.5,100],[20,100.5],[18,102.5],[15.5,105],[13.5,106],[11.5,105.5],[10.5,105.5],[9.7,106]] },
+  { id:40, coords:[[30.5,78.5],[29.5,79.5],[27.5,80.5],[26.5,83],[25.5,85.5],[25,87.5],[23.5,89],[22.5,89.5]] },
+  { id:41, coords:[[32.5,80],[34.5,76.5],[36,74.5],[35,73],[33,72.5],[30.5,71],[27.5,68.5],[25,67.5],[23.5,67.5]] },
+  { id:42, coords:[[30.5,82.5],[30,86],[29.5,90],[29,93.5],[28.5,96],[27.5,95],[26.5,93.5],[26,91.5],[25,90],[23.5,90.5]] },
+  { id:43, coords:[[38.5,39],[37.5,41],[37,42.5],[36,43.5],[34.5,44.5],[33.5,44.5],[32.5,46],[31.5,47],[30,48]] },
+  { id:44, coords:[[39.5,39.5],[38.5,38.5],[37.5,38],[36.5,38.5],[35.5,39.5],[34.5,41.5],[33.5,43.5],[32.5,45],[31.5,46.5],[30.5,47.5],[30,48]] },
+]
+
+// Spread overlapping markers
+function spreadMarkers(locs) {
+  const THRESH_LAT = 2.2, THRESH_LNG = 3.5
+  const STEP_LAT = 2.5, STEP_LNG = 3.8
+  const ANGLES = Array.from({length:16}, (_,i) => i * 137.508 * Math.PI / 180)
+  const placed = []
+  return locs.map(loc => {
+    let dLat = 0, dLng = 0, attempt = 0
+    const conflicts = () => placed.some(p =>
+      Math.abs(p.lat-(loc.lat+dLat)) < THRESH_LAT && Math.abs(p.lng-(loc.lng+dLng)) < THRESH_LNG)
+    while (conflicts() && attempt < ANGLES.length) {
+      const ring = Math.floor(attempt/8)+1
+      dLat = ring*STEP_LAT*Math.sin(ANGLES[attempt])*0.6
+      dLng = ring*STEP_LNG*Math.cos(ANGLES[attempt])
+      attempt++
+    }
+    placed.push({lat:loc.lat+dLat, lng:loc.lng+dLng})
+    return {...loc, dLat, dLng}
+  })
+}
+
+function numberedIcon(id, color, size=18) {
+  return L.divIcon({
+    className: '',
+    html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:1.5px solid rgba(0,0,0,0.2);display:flex;align-items:center;justify-content:center;color:#fff;font-family:Satoshi,sans-serif;font-weight:700;font-size:7px;line-height:1;box-shadow:0 1px 3px rgba(0,0,0,0.25)">${id}</div>`,
+    iconSize:[size,size], iconAnchor:[size/2,size/2],
+  })
+}
+
+// Init map
+const map = L.map('map', {
+  center: [38, 90],
+  zoom: 3,
+  minZoom: 2,
+  maxZoom: 8,
+  zoomControl: true,
+  worldCopyJump: false,
+  maxBounds: L.latLngBounds(L.latLng(-20,15), L.latLng(84,200)),
+  maxBoundsViscosity: 1.0,
+  attributionControl: false,
+})
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
+  subdomains: 'abcd', maxZoom: 19,
+}).addTo(map)
+
+// River lines
+riverPaths.forEach(r => {
+  L.polyline(r.coords, {color:'#b45309', weight:1.5, opacity:0.55, interactive:false}).addTo(map)
+})
+
+// Spread + render markers
+const spread = spreadMarkers(locations)
+spread.forEach(loc => {
+  const color = TYPE_COLORS[loc.type]
+  const dLat = loc.dLat ?? 0
+  const dLng = loc.dLng ?? 0
+  const dispLat = loc.lat + dLat
+  const dispLng = loc.lng + dLng
+
+  if (Math.abs(dLat) > 0.01 || Math.abs(dLng) > 0.01) {
+    L.polyline([[loc.lat,loc.lng],[dispLat,dispLng]], {
+      color, weight:1, opacity:0.4, dashArray:'2 3', interactive:false
+    }).addTo(map)
+    L.circleMarker([loc.lat,loc.lng], {
+      radius:2.5, color, fillColor:color, fillOpacity:0.8, weight:1, interactive:false
+    }).addTo(map)
+  }
+  L.marker([dispLat, dispLng], {icon: numberedIcon(loc.id, color), interactive:false}).addTo(map)
+})
+
+// Build type legend
+const typeOrder = ['sea','gulf','river','lake','mountain','plateau','plain','desert','peninsula','island','canal','strait']
+const typeLegendEl = document.getElementById('type-legend')
+typeOrder.forEach(type => {
+  const el = document.createElement('div')
+  el.className = 'type-legend-item'
+  el.innerHTML = `<span class="type-dot" style="background:${TYPE_COLORS[type]}"></span>${TYPE_LABELS[type]}`
+  typeLegendEl.appendChild(el)
+})
+
+// Build location grid
+const grid = document.getElementById('location-grid')
+locations.forEach(loc => {
+  const el = document.createElement('div')
+  el.className = 'location-item'
+  el.innerHTML = `
+    <span class="loc-badge" style="background:${TYPE_COLORS[loc.type]}">${loc.id}</span>
+    <span class="loc-name">
+      ${loc.name}
+      <span class="loc-type"> · ${TYPE_LABELS[loc.type]}</span>
+    </span>`
+  grid.appendChild(el)
+})
+
+// Print helper — wait for tiles before printing
+function printMap() {
+  map.fitBounds(L.latLngBounds(L.latLng(-12,20), L.latLng(82,195)), {animate:false})
+  setTimeout(() => window.print(), 800)
+}
+</script>
+</body>
+</html>
